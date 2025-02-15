@@ -18,19 +18,19 @@ If you are using a Yocto-based toolchain:
    ```bash
    mkdir build
    cd build
-   cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/yocto/sdk/toolchain.cmake
+   cmake .. -DCMAKE_TOOLCHAIN_FILE=${OE_CMAKE_TOOLCHAIN_FILE}
    make
    ```
 
 3. **Deploy and Run**
    Copy the executable and required image files to the target device:
    ```bash
-   scp OCA_sample user@target_device:/home/user/
-   scp ../resources/*.png user@target_device:/home/user/
+   scp oca_sample user@target_device:/home/root/
+   scp ../resources/*.png user@target_device:/home/root/
    ```
    SSH into the target device and run:
    ```bash
-   ./OCA_sample
+   ./oca_sample
    ```
 
 ## Notes
