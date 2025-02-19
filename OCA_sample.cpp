@@ -12,6 +12,7 @@
 ******************************************/
 /*Definition of Macros & other variables*/
 #include "define.h"
+#include <filesystem>
 /*OpenCV*/
 #include <opencv2/opencv.hpp>
 
@@ -65,13 +66,43 @@ struct timespec end_time;
 * Return value  : the time diffence in ms
 ******************************************/
 double timedifference_msec(struct timespec t0, struct timespec t1) {
-	return float((t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1000000.0);
+	return ((t1.tv_sec - t0.tv_sec) * 1E3 + (t1.tv_nsec - t0.tv_nsec) / 1E6);
+}
+
+static void saveMatNPY(const cv::Mat &mat, const std::string &filename) {
+	std::ofstream file(filename, std::ios::binary);
+	if (!file.is_open()) {
+		std::cerr << "Error: Cannot open file for writing!" << std::endl;
+		return;
+	}
+
+	int shape[2] = {mat.rows, mat.cols};
+	int type = mat.type(); // Save type info
+
+	file.write(reinterpret_cast<const char *>(shape), sizeof(shape)); // Write shape
+	file.write(reinterpret_cast<const char *>(&type), sizeof(int)); // Write type
+	file.write(reinterpret_cast<const char *>(mat.data), static_cast<std::streamsize>(mat.total() * mat.elemSize())); // Write data
+
+	file.close();
 }
 
 /* main */
 int32_t main(int32_t argc, char *argv[]) {
 	double cpu_time, oca_time;
 	unsigned long OCA_f[16];
+	std::string input_data = "image.png";
+	std::filesystem::path resources("resources");
+	std::filesystem::path results("results");
+	std::filesystem::path in_file = resources / input_data;
+
+	if (!std::filesystem::exists(in_file)) {
+		std::cerr << "Error: " << in_file << " does not exist!" << std::endl;
+		return -1;
+	}
+	if (!std::filesystem::exists(results)) {
+		std::filesystem::create_directory(results);
+	}
+
 	printf("RZ/V2MA OPENCV SAMPLE\n");
 	printf("[1] resize              FHD(BGR) -> XGA(BGR)     \n");
 	printf("[2] cvtColor            FHD(YUV) -> FHD(BGR)     \n");
@@ -90,10 +121,10 @@ int32_t main(int32_t argc, char *argv[]) {
 	printf("[15] pyrUp              QFHD(BGR) -> FHD(BGR)    \n");
 	printf("\n\n");
 
-	for (int i = 0; i < DRP_FUNC_NUM; i++) {
-		OCA_f[i] = OPENCVA_FUNC_NOCHANGE;
+	for (unsigned long & i : OCA_f) {
+		i = OPENCVA_FUNC_NOCHANGE;
 	}
-
+#if 0
 	/********************/
 	/* Dummy(filter2D)  */
 	/********************/
@@ -106,7 +137,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 		/* Disable Opencv Accelerator */
 		OCA_f[DRP_FUNC_FILTER2D] = OPENCVA_FUNC_DISABLE;
@@ -138,7 +169,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = 1024 * 768 * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -154,7 +185,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA1_cpu_out.png", dst_image);
+		imwrite(results / "OCA1_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -174,7 +205,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA1_oca_out.png", dst_image);
+		imwrite(results / "OCA1_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -202,7 +233,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		tmp_image = imread("image.png", cv::IMREAD_COLOR);
+		tmp_image = imread(in_file, cv::IMREAD_COLOR);
 		tmp2 = tmp_image;
 		sync();
 
@@ -221,18 +252,20 @@ int32_t main(int32_t argc, char *argv[]) {
 				g1 = bgr[1];
 				b1 = bgr[0];
 
-				y0 = r0 * 0.299 + g0 * 0.587 + b0 * 0.114;
-				y1 = r1 * 0.299 + g1 * 0.587 + b1 * 0.114;
-				u = (r0 + r1) * (-0.169) / 2.0 + (g0 + g1) * (-0.331) / 2.0 + (b0 + b1) * 0.500 / 2.0 + 128.0;
-				v = (r0 + r1) * 0.500 / 2.0 + (g0 + g1) * (-0.419) / 2.0 + (b0 + b1) * (-0.081) / 2.0 + 128.0;
-				in_data[src_counter + 0] = y0 > 255.0 ? 255 : y0 < 0.0 ? 0 : (unsigned char) y0;
-				in_data[src_counter + 1] = u > 255.0 ? 255 : u < 0.0 ? 0 : (unsigned char) u;
-				in_data[src_counter + 2] = y1 > 255.0 ? 255 : y1 < 0.0 ? 0 : (unsigned char) y1;
-				in_data[src_counter + 3] = v > 255.0 ? 255 : v < 0.0 ? 0 : (unsigned char) v;
+				y0 = r0 * 0.299f + g0 * 0.587f + b0 * 0.114f;
+				y1 = r1 * 0.299f + g1 * 0.587f + b1 * 0.114f;
+				u = (r0 + r1) * (-0.169f) / 2.0f + (g0 + g1) * (-0.331f) / 2.0f + (b0 + b1) * 0.500f / 2.0f + 128.0f;
+				v = (r0 + r1) * 0.500f / 2.0f + (g0 + g1) * (-0.419f) / 2.0f + (b0 + b1) * (-0.081f) / 2.0f + 128.0f;
+				in_data[src_counter + 0] = y0 > 255.0f ? 255 : y0 < 0.0f ? 0 : static_cast<unsigned char>(y0);
+				in_data[src_counter + 1] = u > 255.0f ? 255 : u < 0.0f ? 0 : static_cast<unsigned char>(u);
+				in_data[src_counter + 2] = y1 > 255.0f ? 255 : y1 < 0.0f ? 0 : static_cast<unsigned char>(y1);
+				in_data[src_counter + 3] = v > 255.0f ? 255 : v < 0.0f ? 0 : static_cast<unsigned char>(v);
 				src_counter += 4;
 			}
 		}
 		cv::Mat src_image(SRC_HEIGHT,SRC_WIDTH, CV_8UC2, in_data);
+
+		saveMatNPY(src_image, resources/"cvtColor.npy");
 
 		/* Disable Opencv Accelerator */
 		OCA_f[DRP_FUNC_CVT_YUV2BGR] = OPENCVA_FUNC_DISABLE;
@@ -247,7 +280,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA2_cpu_out.png", dst_image);
+		imwrite(results / "OCA2_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -267,7 +300,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA2_oca_out.png", dst_image);
+		imwrite(results / "OCA2_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -295,7 +328,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		tmp_image = imread("image.png", cv::IMREAD_COLOR);
+		tmp_image = imread(in_file, cv::IMREAD_COLOR);
 		tmp2 = tmp_image;
 		sync();
 
@@ -321,24 +354,27 @@ int32_t main(int32_t argc, char *argv[]) {
 				g11 = bgr[1];
 				b11 = bgr[0];
 
-				y00 = r00 * 0.299 + g00 * 0.587 + b00 * 0.114;
-				y01 = r01 * 0.299 + g01 * 0.587 + b01 * 0.114;
-				y10 = r10 * 0.299 + g10 * 0.587 + b10 * 0.114;
-				y11 = r11 * 0.299 + g11 * 0.587 + b11 * 0.114;
-				u = (r00 + r01 + r10 + r11) * (-0.169) / 4.0 + (g00 + g01 + g10 + g11) * (-0.331) / 4.0 + (
-						b00 + b01 + b10 + b11) * 0.500 / 4.0 + 128.0;
-				v = (r00 + r01 + r10 + r11) * 0.500 / 4.0 + (g00 + g01 + g10 + g11) * (-0.419) / 4.0 + (
-						b00 + b01 + b10 + b11) * (-0.081) / 4.0 + 128.0;
-				in_data0[y * SRC_WIDTH + x] = y00 > 255.0 ? 255 : y00 < 0.0 ? 0 : (unsigned char) y00;
-				in_data0[y * SRC_WIDTH + x + 1] = y01 > 255.0 ? 255 : y01 < 0.0 ? 0 : (unsigned char) y01;
-				in_data0[(y + 1) * SRC_WIDTH + x] = y10 > 255.0 ? 255 : y10 < 0.0 ? 0 : (unsigned char) y10;
-				in_data0[(y + 1) * SRC_WIDTH + x + 1] = y11 > 255.0 ? 255 : y11 < 0.0 ? 0 : (unsigned char) y11;
-				in_data1[y * (SRC_WIDTH / 2) + x] = u > 255.0 ? 255 : u < 0.0 ? 0 : (unsigned char) u;
-				in_data1[y * (SRC_WIDTH / 2) + x + 1] = v > 255.0 ? 255 : v < 0.0 ? 0 : (unsigned char) v;
+				y00 = r00 * 0.299f + g00 * 0.587f + b00 * 0.114f;
+				y01 = r01 * 0.299f + g01 * 0.587f + b01 * 0.114f;
+				y10 = r10 * 0.299f + g10 * 0.587f + b10 * 0.114f;
+				y11 = r11 * 0.299f + g11 * 0.587f + b11 * 0.114f;
+				u = (r00 + r01 + r10 + r11) * (-0.169f) / 4.0f + (g00 + g01 + g10 + g11) * (-0.331f) / 4.0f + (
+						b00 + b01 + b10 + b11) * 0.500f / 4.0f + 128.0f;
+				v = (r00 + r01 + r10 + r11) * 0.500f / 4.0f + (g00 + g01 + g10 + g11) * (-0.419f) / 4.0f + (
+						b00 + b01 + b10 + b11) * (-0.081f) / 4.0f + 128.0f;
+				in_data0[y * SRC_WIDTH + x] = y00 > 255.0f ? 255 : y00 < 0.0f ? 0 : static_cast<unsigned char>(y00);
+				in_data0[y * SRC_WIDTH + x + 1] = y01 > 255.0f ? 255 : y01 < 0.0f ? 0 : static_cast<unsigned char>(y01);
+				in_data0[(y + 1) * SRC_WIDTH + x] = y10 > 255.0f ? 255 : y10 < 0.0f ? 0 : static_cast<unsigned char>(y10);
+				in_data0[(y + 1) * SRC_WIDTH + x + 1] = y11 > 255.0f ? 255 : y11 < 0.0f ? 0 : static_cast<unsigned char>(y11);
+				in_data1[y * (SRC_WIDTH / 2) + x] = u > 255.0f ? 255 : u < 0.0f ? 0 : static_cast<unsigned char>(u);
+				in_data1[y * (SRC_WIDTH / 2) + x + 1] = v > 255.0f ? 255 : v < 0.0f ? 0 : static_cast<unsigned char>(v);
 			}
 		}
 		cv::Mat src_image1(SRC_HEIGHT,SRC_WIDTH, CV_8UC1, in_data0);
 		cv::Mat src_image2((SRC_HEIGHT / 2), (SRC_WIDTH / 2), CV_8UC2, in_data1);
+
+		saveMatNPY(src_image1, resources/"cvtColorTwoPlane1.npy");
+		saveMatNPY(src_image2, resources/"cvtColorTwoPlane2.npy");
 
 		/* Disable Opencv Accelerator */
 		OCA_f[DRP_FUNC_CVT_NV2BGR] = OPENCVA_FUNC_DISABLE;
@@ -353,7 +389,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA3_cpu_out.png", dst_image);
+		imwrite(results / "OCA3_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -373,7 +409,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA3_oca_out.png", dst_image);
+		imwrite(results / "OCA3_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -397,7 +433,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -413,7 +449,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA4_cpu_out.png", dst_image);
+		imwrite(results / "OCA4_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -433,7 +469,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA4_oca_out.png", dst_image);
+		imwrite(results / "OCA4_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -456,7 +492,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -472,7 +508,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA5_cpu_out.png", dst_image);
+		imwrite(results / "OCA5_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -492,7 +528,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA5_oca_out.png", dst_image);
+		imwrite(results / "OCA5_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -515,7 +551,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -531,7 +567,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA6_cpu_out.png", dst_image);
+		imwrite(results / "OCA6_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -551,7 +587,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA6_oca_out.png", dst_image);
+		imwrite(results / "OCA6_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -574,7 +610,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -591,7 +627,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA7_cpu_out.png", dst_image);
+		imwrite(results / "OCA7_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -612,7 +648,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA7_oca_out.png", dst_image);
+		imwrite(results / "OCA7_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -638,7 +674,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -654,7 +690,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA8_cpu_out.png", dst_image);
+		imwrite(results / "OCA8_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -674,7 +710,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA8_oca_out.png", dst_image);
+		imwrite(results / "OCA8_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -697,7 +733,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -713,7 +749,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA9_cpu_out.png", dst_image);
+		imwrite(results / "OCA9_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -733,7 +769,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA9_oca_out.png", dst_image);
+		imwrite(results / "OCA9_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -756,7 +792,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 1;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_GRAYSCALE);
+		src_image = imread(in_file, cv::IMREAD_GRAYSCALE);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -772,7 +808,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA10_cpu_out.png", dst_image);
+		imwrite(results / "OCA10_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -792,7 +828,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA10_oca_out.png", dst_image);
+		imwrite(results / "OCA10_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -803,7 +839,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		OCA_f[DRP_FUNC_A_THRESHOLD] = OPENCVA_FUNC_NOCHANGE;
 	}
 
-
+#endif
 	/****************************************************/
 	/* [11] matchTemplate 640x360(BGR) [template 16x16] */
 	/****************************************************/
@@ -818,7 +854,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		tmp_image = imread("image.png", cv::IMREAD_COLOR);
+		tmp_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Crop src image(640x360) */
@@ -839,18 +875,18 @@ int32_t main(int32_t argc, char *argv[]) {
 		oca_s = out_data[0]; //for suppress optimization
 		timespec_get(&end_time, TIME_UTC);
 		cpu_time = timedifference_msec(start_time, end_time);
-		printf("[CPU]%fmsec\n", cpu_time); {
+		printf("[CPU]%fmsec\n", cpu_time); //
+		{
 			double min, max;
-			cv::Point min_p, max_p, maxr_p;
+			cv::Point min_p, max_p;
 			cv::minMaxLoc(dst_image, &min, &max, &min_p, &max_p);
-			out_image = imread("image.png", cv::IMREAD_COLOR);
-			cv::rectangle(out_image, {min_p.x + 800, min_p.y + 400}, {min_p.x + 816, min_p.y + 416}, (128, 128, 128),
-						  2);
+			out_image = imread(in_file, cv::IMREAD_COLOR);
+			cv::rectangle(out_image, {min_p.x + 800, min_p.y + 400}, {min_p.x + 816, min_p.y + 416}, {128, 0, 128}, 3);
 		}
 		oca_s = out_data[0]; //for suppress optimization
 
 		/* [CPU]Write image data */
-		imwrite("OCA11_cpu_out.png", out_image);
+		imwrite(results / "OCA11_cpu_out.png", out_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -869,15 +905,14 @@ int32_t main(int32_t argc, char *argv[]) {
 		oca_time = timedifference_msec(start_time, end_time);
 		printf("[OCA]%fmsec\n", oca_time); {
 			double min, max;
-			cv::Point min_p, max_p, maxr_p;
+			cv::Point min_p, max_p;
 			cv::minMaxLoc(dst_image, &min, &max, &min_p, &max_p);
-			out_image = imread("image.png", cv::IMREAD_COLOR);
-			cv::rectangle(out_image, {min_p.x + 800, min_p.y + 400}, {min_p.x + 816, min_p.y + 416}, (128, 128, 128),
-						  2);
+			out_image = imread(in_file, cv::IMREAD_COLOR);
+			cv::rectangle(out_image, {min_p.x + 800, min_p.y + 400}, {min_p.x + 816, min_p.y + 416}, {128, 128, 128}, 3);
 		}
 
 		/* [OCA]Write image data */
-		imwrite("OCA11_oca_out.png", out_image);
+		imwrite(results / "OCA11_oca_out.png", out_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -888,7 +923,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		OCA_f[DRP_FUNC_TMPLEATMATCH] = OPENCVA_FUNC_NOCHANGE;
 	}
 
-
+#if 0
 	/*******************************/
 	/* [12]  warpAffine   FHD(BGR) */
 	/*******************************/
@@ -902,7 +937,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -918,7 +953,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA12_cpu_out.png", dst_image);
+		imwrite(results / "OCA12_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -938,7 +973,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA12_oca_out.png", dst_image);
+		imwrite(results / "OCA12_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -963,7 +998,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = SRC_WIDTH * SRC_HEIGHT * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -979,7 +1014,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA13_cpu_out.png", dst_image);
+		imwrite(results / "OCA13_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -999,7 +1034,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA13_oca_out.png", dst_image);
+		imwrite(results / "OCA13_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -1022,7 +1057,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		dst_size = (SRC_WIDTH / 2) * (SRC_HEIGHT / 2) * 3;
 
 		/* Read image data */
-		src_image = imread("image.png", cv::IMREAD_COLOR);
+		src_image = imread(in_file, cv::IMREAD_COLOR);
 		sync();
 
 		/* Disable Opencv Accelerator */
@@ -1038,7 +1073,8 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA14_cpu_out.png", dst_image);
+		imwrite(results / "OCA14_cpu_out.png", dst_image);
+		copy_file(results / "OCA14_cpu_out.png", resources / "small.png");
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -1058,7 +1094,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA14_oca_out.png", dst_image);
+		imwrite(results / "OCA14_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -1097,7 +1133,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU]%fmsec\n", cpu_time);
 
 		/* [CPU]Write image data */
-		imwrite("OCA15_cpu_out.png", dst_image);
+		imwrite(results / "OCA15_cpu_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -1117,7 +1153,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[OCA]%fmsec\n", oca_time);
 
 		/* [OCA]Write image data */
-		imwrite("OCA15_oca_out.png", dst_image);
+		imwrite(results / "OCA15_oca_out.png", dst_image);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -1127,7 +1163,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU] / [OCA] = %f times\n\n", cpu_time / oca_time);
 		OCA_f[DRP_FUNC_PYR_UP] = OPENCVA_FUNC_NOCHANGE;
 	}
-
+#endif
 
 	printf("[END] Complete!!\n");
 	return 0;
