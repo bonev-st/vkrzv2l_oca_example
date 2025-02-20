@@ -124,7 +124,7 @@ int32_t main(int32_t argc, char *argv[]) {
 	for (unsigned long & i : OCA_f) {
 		i = OPENCVA_FUNC_NOCHANGE;
 	}
-#if 0
+
 	/********************/
 	/* Dummy(filter2D)  */
 	/********************/
@@ -839,7 +839,6 @@ int32_t main(int32_t argc, char *argv[]) {
 		OCA_f[DRP_FUNC_A_THRESHOLD] = OPENCVA_FUNC_NOCHANGE;
 	}
 
-#endif
 	/****************************************************/
 	/* [11] matchTemplate 640x360(BGR) [template 16x16] */
 	/****************************************************/
@@ -923,7 +922,6 @@ int32_t main(int32_t argc, char *argv[]) {
 		OCA_f[DRP_FUNC_TMPLEATMATCH] = OPENCVA_FUNC_NOCHANGE;
 	}
 
-#if 0
 	/*******************************/
 	/* [12]  warpAffine   FHD(BGR) */
 	/*******************************/
@@ -1074,7 +1072,7 @@ int32_t main(int32_t argc, char *argv[]) {
 
 		/* [CPU]Write image data */
 		imwrite(results / "OCA14_cpu_out.png", dst_image);
-		copy_file(results / "OCA14_cpu_out.png", resources / "small.png");
+		copy_file(results / "OCA14_cpu_out.png", resources / "small.png",  std::filesystem::copy_options::overwrite_existing);
 		sync();
 		/* Wait to complete writing to storage */
 #if C_DELAY
@@ -1163,7 +1161,6 @@ int32_t main(int32_t argc, char *argv[]) {
 		printf("[CPU] / [OCA] = %f times\n\n", cpu_time / oca_time);
 		OCA_f[DRP_FUNC_PYR_UP] = OPENCVA_FUNC_NOCHANGE;
 	}
-#endif
 
 	printf("[END] Complete!!\n");
 	return 0;
